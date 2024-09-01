@@ -62,7 +62,7 @@ export const getAllBusinessCards = asyncHandler(async (req, res) => {
 
   const cards = await BusinessCard.find().populate(
     "assignedTo",
-    "username email"
+    "username email role"
   );
 
   return res
@@ -76,8 +76,13 @@ export const updateBusinessCard = asyncHandler(async (req, res) => {
   const { urlCode } = req.params;
   const { details } = req.body;
 
+  let query = { urlCode };
+  if (req.user.role !== "admin") {
+    query.assignedTo = req.user._id;
+  }
+
   const card = await BusinessCard.findOneAndUpdate(
-    { urlCode, assignedTo: req.user._id },
+    query,
     { $set: { details } },
     { new: true }
   );
@@ -97,8 +102,13 @@ export const updateBusinessCard = asyncHandler(async (req, res) => {
 export const activateBusinessCard = asyncHandler(async (req, res) => {
   const { urlCode } = req.params;
 
+  let query = { urlCode, isActive: false };
+  if (req.user.role !== "admin") {
+    query.assignedTo = req.user._id;
+  }
+
   const card = await BusinessCard.findOneAndUpdate(
-    { urlCode, assignedTo: req.user._id, isActive: false },
+    query,
     { isActive: true, startDate: Date.now() },
     { new: true }
   );
@@ -118,8 +128,13 @@ export const activateBusinessCard = asyncHandler(async (req, res) => {
 export const deactivateBusinessCard = asyncHandler(async (req, res) => {
   const { urlCode } = req.params;
 
+  let query = { urlCode, isActive: true };
+  if (req.user.role !== "admin") {
+    query.assignedTo = req.user._id;
+  }
+
   const card = await BusinessCard.findOneAndUpdate(
-    { urlCode, assignedTo: req.user._id, isActive: true },
+    query,
     { isActive: false },
     { new: true }
   );
@@ -222,10 +237,12 @@ export const deleteBusinessCard = asyncHandler(async (req, res) => {
     throw new ApiError(400, "Invalid card ID");
   }
 
-  const card = await BusinessCard.findOneAndDelete({
-    _id: id,
-    assignedTo: req.user._id,
-  });
+  let query = { _id: id };
+  if (req.user.role !== "admin") {
+    query.assignedTo = req.user._id;
+  }
+
+  const card = await BusinessCard.findOneAndDelete(query);
 
   if (!card) {
     throw new ApiError(

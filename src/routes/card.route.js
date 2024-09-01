@@ -16,21 +16,23 @@ import { verifyJWT, isAdmin } from "../middlewares/auth.middleware.js";
 
 const router = Router();
 
-// Public routes
-router.get("/:urlCode", getBusinessCard);
+// Admin routes (require authentication and admin role)
+router.get("/all", verifyJWT, isAdmin, getAllBusinessCards);
+router.get("/non-admin-users", verifyJWT, isAdmin, getNonAdminUsers);
 
 // User routes (require authentication)
 router.post("/create", verifyJWT, createBusinessCards);
 router.get("/user", verifyJWT, getUserBusinessCards);
-router.put("/:urlCode", verifyJWT, updateBusinessCard);
-router.put("/:urlCode/activate", verifyJWT, activateBusinessCard);
-router.put("/:urlCode/deactivate", verifyJWT, deactivateBusinessCard);
-router.put("/:id/url-code", verifyJWT, setUrlCode);
-router.delete("/:id", verifyJWT, deleteBusinessCard);
+router.put("/update/:urlCode", verifyJWT, updateBusinessCard);
+router.put("/activate/:urlCode", verifyJWT, activateBusinessCard);
+router.put("/deactivate/:urlCode", verifyJWT, deactivateBusinessCard);
+router.put("/url-code/:id", verifyJWT, setUrlCode);
+router.delete("/delete/:id", verifyJWT, deleteBusinessCard);
 
-// Admin routes (require authentication and admin role)
-router.get("/all", verifyJWT, isAdmin, getAllBusinessCards);
-router.get("/non-admin-users", verifyJWT, isAdmin, getNonAdminUsers);
-router.put("/:urlCode/reassign", verifyJWT, isAdmin, reAssignBusinessCard);
+// Admin route for reassigning
+router.put("/reassign/:urlCode", verifyJWT, isAdmin, reAssignBusinessCard);
+
+// Public route
+router.get("/:urlCode", getBusinessCard);
 
 export default router;
