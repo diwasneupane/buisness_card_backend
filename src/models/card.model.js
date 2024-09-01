@@ -6,24 +6,20 @@ const businessCardSchema = new mongoose.Schema(
     urlCode: {
       type: String,
       unique: true,
+      required: true,
       default: () => crypto.randomBytes(3).toString("hex"),
-    },
-    customUrlCode: {
-      type: String,
-      unique: true,
-      sparse: true,
     },
     assignedTo: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
+      required: true,
     },
     isActive: {
       type: Boolean,
-      default: true,
+      default: false,
     },
     startDate: {
       type: Date,
-      default: Date.now,
     },
     expiryDate: {
       type: Date,
@@ -41,10 +37,11 @@ const businessCardSchema = new mongoose.Schema(
       email: String,
       website: String,
       address: String,
-      // Add more fields as needed
     },
   },
   { timestamps: true }
 );
+
+businessCardSchema.index({ urlCode: 1 }, { unique: true });
 
 export const BusinessCard = mongoose.model("BusinessCard", businessCardSchema);

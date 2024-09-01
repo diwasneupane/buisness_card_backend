@@ -2,6 +2,8 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
 import { BusinessCard } from "../models/card.model.js";
+import mongoose from "mongoose";
+import { User } from "../models/user.modal.js";
 
 export const createBusinessCards = asyncHandler(async (req, res) => {
   const { count } = req.body;
@@ -14,6 +16,7 @@ export const createBusinessCards = asyncHandler(async (req, res) => {
     .fill()
     .map(() => ({
       assignedTo: req.user._id,
+      isActive: false,
     }));
 
   const createdCards = await BusinessCard.create(cards);
@@ -27,15 +30,14 @@ export const createBusinessCards = asyncHandler(async (req, res) => {
 
 export const getBusinessCard = asyncHandler(async (req, res) => {
   const { urlCode } = req.params;
-  console.log(req.params);
 
-  const card = await BusinessCard.findOne({
-    $or: [{ urlCode }, { customUrlCode: urlCode }],
-    isActive: true,
-  }).populate("assignedTo", "username email");
+  const card = await BusinessCard.findOne({ urlCode }).populate(
+    "assignedTo",
+    "username email"
+  );
 
   if (!card) {
-    throw new ApiError(404, "Business card not found or inactive");
+    throw new ApiError(404, "Business card not found");
   }
 
   return res
@@ -53,15 +55,29 @@ export const getUserBusinessCards = asyncHandler(async (req, res) => {
     );
 });
 
+export const getAllBusinessCards = asyncHandler(async (req, res) => {
+  if (req.user.role !== "admin") {
+    throw new ApiError(403, "You don't have permission to access all cards");
+  }
+
+  const cards = await BusinessCard.find().populate(
+    "assignedTo",
+    "username email"
+  );
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(200, "All business cards fetched successfully", cards)
+    );
+});
+
 export const updateBusinessCard = asyncHandler(async (req, res) => {
   const { urlCode } = req.params;
   const { details } = req.body;
 
   const card = await BusinessCard.findOneAndUpdate(
-    {
-      $or: [{ urlCode }, { customUrlCode: urlCode }],
-      assignedTo: req.user._id,
-    },
+    { urlCode, assignedTo: req.user._id },
     { $set: { details } },
     { new: true }
   );
@@ -78,15 +94,32 @@ export const updateBusinessCard = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, "Business card updated successfully", card));
 });
 
+export const activateBusinessCard = asyncHandler(async (req, res) => {
+  const { urlCode } = req.params;
+
+  const card = await BusinessCard.findOneAndUpdate(
+    { urlCode, assignedTo: req.user._id, isActive: false },
+    { isActive: true, startDate: Date.now() },
+    { new: true }
+  );
+
+  if (!card) {
+    throw new ApiError(
+      404,
+      "Business card not found, already active, or you don't have permission to activate"
+    );
+  }
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, "Business card activated successfully", card));
+});
+
 export const deactivateBusinessCard = asyncHandler(async (req, res) => {
   const { urlCode } = req.params;
 
   const card = await BusinessCard.findOneAndUpdate(
-    {
-      $or: [{ urlCode }, { customUrlCode: urlCode }],
-      assignedTo: req.user._id,
-      isActive: true,
-    },
+    { urlCode, assignedTo: req.user._id, isActive: true },
     { isActive: false },
     { new: true }
   );
@@ -94,7 +127,7 @@ export const deactivateBusinessCard = asyncHandler(async (req, res) => {
   if (!card) {
     throw new ApiError(
       404,
-      "Business card not found, inactive, or you don't have permission to deactivate"
+      "Business card not found, already inactive, or you don't have permission to deactivate"
     );
   }
 
@@ -107,14 +140,22 @@ export const reAssignBusinessCard = asyncHandler(async (req, res) => {
   const { urlCode } = req.params;
   const { newUserId } = req.body;
 
+  if (req.user.role !== "admin") {
+    throw new ApiError(403, "Only admins can reassign cards");
+  }
+
+  const newUser = await User.findById(newUserId);
+  if (!newUser) {
+    throw new ApiError(404, "New user not found");
+  }
+
   const card = await BusinessCard.findOneAndUpdate(
-    { $or: [{ urlCode }, { customUrlCode: urlCode }] },
+    { urlCode },
     {
       assignedTo: newUserId,
       details: {},
-      customUrlCode: undefined,
-      isActive: true,
-      startDate: Date.now(),
+      isActive: false,
+      startDate: null,
     },
     { new: true }
   );
@@ -128,25 +169,23 @@ export const reAssignBusinessCard = asyncHandler(async (req, res) => {
     .json(new ApiResponse(200, "Business card reassigned successfully", card));
 });
 
-export const setCustomUrlCode = asyncHandler(async (req, res) => {
-  const { urlCode } = req.params;
-  const { customUrlCode } = req.body;
+export const setUrlCode = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { newUrlCode } = req.body;
 
-  if (!customUrlCode) {
-    throw new ApiError(400, "Custom URL code is required");
+  if (!newUrlCode) {
+    throw new ApiError(400, "New URL code is required");
   }
 
-  const existingCard = await BusinessCard.findOne({ customUrlCode });
+  const existingCard = await BusinessCard.findOne({ urlCode: newUrlCode });
+
   if (existingCard) {
-    throw new ApiError(409, "Custom URL code already in use");
+    throw new ApiError(409, "This URL code is already in use");
   }
 
   const card = await BusinessCard.findOneAndUpdate(
-    {
-      $or: [{ urlCode }, { customUrlCode: urlCode }],
-      assignedTo: req.user._id,
-    },
-    { customUrlCode },
+    { _id: id, assignedTo: req.user._id },
+    { urlCode: newUrlCode },
     { new: true }
   );
 
@@ -159,5 +198,43 @@ export const setCustomUrlCode = asyncHandler(async (req, res) => {
 
   return res
     .status(200)
-    .json(new ApiResponse(200, "Custom URL code set successfully", card));
+    .json(new ApiResponse(200, "URL code updated successfully", card));
+});
+
+export const getNonAdminUsers = asyncHandler(async (req, res) => {
+  if (req.user.role !== "admin") {
+    throw new ApiError(403, "Only admins can fetch user list");
+  }
+
+  const users = await User.find({ role: { $ne: "admin" } }).select(
+    "_id username email"
+  );
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, "Non-admin users fetched successfully", users));
+});
+
+export const deleteBusinessCard = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    throw new ApiError(400, "Invalid card ID");
+  }
+
+  const card = await BusinessCard.findOneAndDelete({
+    _id: id,
+    assignedTo: req.user._id,
+  });
+
+  if (!card) {
+    throw new ApiError(
+      404,
+      "Business card not found or you don't have permission to delete"
+    );
+  }
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, "Business card deleted successfully", null));
 });
